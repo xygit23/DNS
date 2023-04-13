@@ -27,6 +27,7 @@ tf.disable_v2_behavior()
 # import matplotlib.pyplot as plt
 # import MyLeadingTreeGraph as lt
 # from DeLaLA_select import DeLaLA_select
+import pprint
 
 def save_sparse_csr(filename, array):
     np.savez(filename, data=array.data, indices=array.indices,
@@ -122,6 +123,10 @@ def load_data(dataset_str, train_size, validation_size, model_config, shuffle=Tr
         features = data['X']
         sample = features[0].copy()
         adj = data['G']
+    elif dataset_str in ['photo', 'computers']:
+        features = np.load('data/{}/{}/processed/{}_x.npz'.format(dataset_str, dataset_str, dataset_str))['arr_0']
+        labels = np.load('data/{}/{}/processed/{}_y.npz'.format(dataset_str, dataset_str, dataset_str))['arr_0']
+        adj = load_sparse_csr('data/{}/{}/processed/{}_adj.npz'.format(dataset_str, dataset_str, dataset_str))
     else:
         names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
         objects = []
@@ -198,20 +203,7 @@ def load_data(dataset_str, train_size, validation_size, model_config, shuffle=Tr
     # validation_size = validation_size * len(idx) // 100
     # if not hasattr(train_size, '__getitem__'):
     train_size = [train_size for i in range(labels.shape[1])]
-    if shuffle:
-        np.random.shuffle(idx)
-    idx_train = []
-    count = [0 for i in range(no_class)]
-    label_each_class = train_size
-    next = 0
-    for i in idx:
-        if count == label_each_class:
-            break
-        next += 1
-        for j in range(no_class):
-            if labels[i, j] and count[j] < label_each_class[j]:
-                idx_train.append(i)
-                count[j] += 1
+
 
     if DNS is True:
     # DNS select
@@ -222,7 +214,25 @@ def load_data(dataset_str, train_size, validation_size, model_config, shuffle=Tr
         idx = idx.tolist()
         if shuffle:
             np.random.shuffle(idx)
+        next = 0
+    else:
+        if shuffle:
+            np.random.shuffle(idx)
+        idx_train = []
+        count = [0 for i in range(no_class)]
+        label_each_class = train_size
+        next = 0
+        for i in idx:
+            if count == label_each_class:
+                break
+            next += 1
+            for j in range(no_class):
+                if labels[i, j] and count[j] < label_each_class[j]:
+                    idx_train.append(i)
+                    count[j] += 1
+    # print(idx_train)
 
+    # print('idx_train:', idx_train)
     test_size = model_config['test_size']
     if model_config['validate']:
         if test_size:
@@ -716,6 +726,7 @@ def preprocess_model_config(model_config):
 
 
         model_config['name'] = model_name
+        # pprint.PrettyPrinter(indent=4).pprint(model_config)
 
     return  model_config
 
