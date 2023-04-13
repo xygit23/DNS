@@ -1,9 +1,6 @@
 from __future__ import division
 from __future__ import print_function
 
-import warnings
-warnings.filterwarnings('ignore')
-
 import time
 # import tensorflow as tf
 import tensorflow.compat.v1 as tf
@@ -15,7 +12,9 @@ from DI.gcn.utils import construct_feed_dict, preprocess_adj, chebyshev_polynomi
     load_data, sparse_to_tuple, cotraining, selftraining, lp, union_intersection, preprocess_model_config
 from DI.gcn.models import GCN_MLP
 
-from DI.config import configuration, args
+import warnings
+warnings.filterwarnings('ignore')
+
 
 
 def train(model_config, sess, seed, data_split = None, DNS=False, DNS_idx=None):
@@ -227,8 +226,8 @@ def train(model_config, sess, seed, data_split = None, DNS=False, DNS_idx=None):
                         feed_dict=test_feed_dict)
                     test_duration = time.time() - t_test
                     prediction = sess.run(model.prediction,train_feed_dict)
-                    if args.verbose:
-                        print('*', end='')
+                    # if args.verbose:
+                    #     print('*', end='')
             else:
                 if train_acc > max_train_acc:
                     max_train_acc = train_acc
@@ -238,22 +237,22 @@ def train(model_config, sess, seed, data_split = None, DNS=False, DNS_idx=None):
                         feed_dict=test_feed_dict)
                     test_duration = time.time() - t_test
                     prediction = sess.run(model.prediction,train_feed_dict)
-                    if args.verbose:
-                        print('*', end='')
+                    # if args.verbose:
+                    #     print('*', end='')
 
             # Print results
-            if args.verbose:
-                print("Epoch: {:04d}".format(step),
-                      "train_loss= {:.3f}".format(train_loss),
-                      "train_acc= {:.3f}".format(train_acc), end=' ')
-                if model_config['validate']:
-                    print(
-                      "val_loss=", "{:.3f}".format(valid_loss),
-                      "val_acc= {:.3f}".format(valid_acc),end=' ')
-                print("time=", "{:.5f}".format(t))
-        else:
-            # print("Optimization Finished!")
-            pass
+        #     if args.verbose:
+        #         print("Epoch: {:04d}".format(step),
+        #               "train_loss= {:.3f}".format(train_loss),
+        #               "train_acc= {:.3f}".format(train_acc), end=' ')
+        #         if model_config['validate']:
+        #             print(
+        #               "val_loss=", "{:.3f}".format(valid_loss),
+        #               "val_acc= {:.3f}".format(valid_acc),end=' ')
+        #         print("time=", "{:.5f}".format(t))
+        # else:
+        #     # print("Optimization Finished!")
+        #     pass
 
         # Testing
         # print("Test set results:", "cost=", "{:.5f}".format(test_cost),
@@ -263,27 +262,31 @@ def train(model_config, sess, seed, data_split = None, DNS=False, DNS_idx=None):
     # print("Total time={}s".format(time.time()-very_begining))
     return test_acc, test_acc_of_class, prediction, time.time()-very_begining
 
-def DI_train(repeating, seed, model_config, DNS=False, DNS_idx=None):
+
+def DI_train(args, model_config, DNS=False, DNS_idx=None):
+    # model_config = model_config['model_list']
     model_config = preprocess_model_config(model_config)
-    acc = []
-    duration = []
-    r = 0
-    while r < repeating:
-        np.random.seed(seed)
-        seed = np.random.random_integers(1073741824)
-        # Initialize session
-        with tf.Graph().as_default():
-            tf.set_random_seed(seed)
-            with tf.Session(config=tf.ConfigProto(
-                    intra_op_parallelism_threads=model_config['threads'])) as sess:
-                test_acc, test_acc_of_class, prediction, t = train(model_config, sess, seed, DNS=DNS, DNS_idx=DNS_idx)
-                acc.append(test_acc)
-                duration.append(t)
-        # print('repeated ', r + 1, 'rounds')
-        r += 1
-    acc_mean = np.mean(acc)
-    acc_std = np.std(acc)
-    duration_mean = np.mean(duration)
+    acc_mean = []
+    acc_std = []
+    duration_mean = []
+    np.random.seed(args.seed)
+
+    for i in range(args.repeating):
+        acc = []
+        duration = []
+        for j in range(args.runs):
+            seed = np.random.random_integers(args.seed)
+            # Initialize session
+            with tf.Graph().as_default():
+                tf.set_random_seed(seed)
+                with tf.Session(config=tf.ConfigProto(
+                        intra_op_parallelism_threads=model_config['threads'])) as sess:
+                    test_acc, test_acc_of_class, prediction, t = train(model_config, sess, seed, DNS=DNS, DNS_idx=DNS_idx)
+            acc.append(test_acc)
+            duration.append(t)
+        acc_mean.append(np.mean(acc))
+        acc_std.append(np.std(acc))
+        duration_mean.append(np.mean(duration))
 
     return acc_mean, acc_std, duration_mean
 
@@ -293,53 +296,53 @@ def DI_train(repeating, seed, model_config, DNS=False, DNS_idx=None):
 
 
 
-if __name__ == '__main__':
-
-    acc = [[] for i in configuration['model_list']]
-    acc_of_class = [[] for i in configuration['model_list']]
-    duration = [[] for i in configuration['model_list']]
-    # Read configuration
-    r = 0
-    while r < (configuration['repeating']):
-        for model_config, i in zip(configuration['model_list'], range(len(configuration['model_list']))):
-            # Set random seed
-            seed = model_config['random_seed']
-            np.random.seed(seed)
-            model_config['random_seed'] = np.random.random_integers(1073741824)
-
-            # Initialize session
-            with tf.Graph().as_default():
-                tf.set_random_seed(seed)
-                with tf.Session(config=tf.ConfigProto(
-                        intra_op_parallelism_threads=model_config['threads'])) as sess:
-                    test_acc, test_acc_of_class, prediction, t = train(model_config, sess, seed)
-                    acc[i].append(test_acc)
-                    acc_of_class[i].append(test_acc_of_class)
-                    duration[i].append(t)
-        print('repeated ', r + 1, 'rounds')
-        r += 1
-
-    acc_means = np.mean(acc, axis=1)
-    acc_stds = np.std(acc, axis=1)
-    acc_of_class_means = np.mean(acc_of_class, axis=1)
-    duration = np.mean(duration, axis=1)
-    # print mean, standard deviation, and model name
-
-    print("REPEAT\t{}".format(configuration['repeating']))
-    print("{:<8}\t{:<8}\t{:<8}\t{:<8}\t{:<8}\t{:<8}\t{:<8}".format('DATASET', 'train_size', 'valid_size', 'RESULTS', 'STD', 'TRAIN_TIME', 'NAME'))
-    for model_config, acc_mean, acc_std, t in zip(configuration['model_list'], acc_means, acc_stds, duration):
-        print("{:<8}\t{:<8}\t{:<8}\t{:<8.6f}\t{:<8.6f}\t{:<8.2f}\t{:<8}".format(model_config['dataset'],
-                                                                          str(model_config['train_size']) + ' per class',
-                                                                          str(model_config['validation_size']),
-                                                                          acc_mean,
-                                                                          acc_std,
-                                                                          t,
-                                                                          model_config['name']))
-    print('acc in {} runs.'.format(len(acc[0])))
-
-    for model_config, acc_of_class_mean in zip(configuration['model_list'], acc_of_class_means):
-        print('[',end='')
-        for acc_of_class in acc_of_class_mean:
-            print('{:0<5.3}'.format(acc_of_class),end=', ')
-        print(']',end='')
-        print('\t{:<8}'.format(model_config['name']))
+# if __name__ == '__main__':
+#
+#     acc = [[] for i in configuration['model_list']]
+#     acc_of_class = [[] for i in configuration['model_list']]
+#     duration = [[] for i in configuration['model_list']]
+#     # Read configuration
+#     r = 0
+#     while r < (configuration['repeating']):
+#         for model_config, i in zip(configuration['model_list'], range(len(configuration['model_list']))):
+#             # Set random seed
+#             seed = model_config['random_seed']
+#             np.random.seed(seed)
+#             model_config['random_seed'] = np.random.random_integers(1073741824)
+#
+#             # Initialize session
+#             with tf.Graph().as_default():
+#                 tf.set_random_seed(seed)
+#                 with tf.Session(config=tf.ConfigProto(
+#                         intra_op_parallelism_threads=model_config['threads'])) as sess:
+#                     test_acc, test_acc_of_class, prediction, t = train(model_config, sess, seed)
+#                     acc[i].append(test_acc)
+#                     acc_of_class[i].append(test_acc_of_class)
+#                     duration[i].append(t)
+#         print('repeated ', r + 1, 'rounds')
+#         r += 1
+#
+#     acc_means = np.mean(acc, axis=1)
+#     acc_stds = np.std(acc, axis=1)
+#     acc_of_class_means = np.mean(acc_of_class, axis=1)
+#     duration = np.mean(duration, axis=1)
+#     # print mean, standard deviation, and model name
+#
+#     print("REPEAT\t{}".format(configuration['repeating']))
+#     print("{:<8}\t{:<8}\t{:<8}\t{:<8}\t{:<8}\t{:<8}\t{:<8}".format('DATASET', 'train_size', 'valid_size', 'RESULTS', 'STD', 'TRAIN_TIME', 'NAME'))
+#     for model_config, acc_mean, acc_std, t in zip(configuration['model_list'], acc_means, acc_stds, duration):
+#         print("{:<8}\t{:<8}\t{:<8}\t{:<8.6f}\t{:<8.6f}\t{:<8.2f}\t{:<8}".format(model_config['dataset'],
+#                                                                           str(model_config['train_size']) + ' per class',
+#                                                                           str(model_config['validation_size']),
+#                                                                           acc_mean,
+#                                                                           acc_std,
+#                                                                           t,
+#                                                                           model_config['name']))
+#     print('acc in {} runs.'.format(len(acc[0])))
+#
+#     for model_config, acc_of_class_mean in zip(configuration['model_list'], acc_of_class_means):
+#         print('[',end='')
+#         for acc_of_class in acc_of_class_mean:
+#             print('{:0<5.3}'.format(acc_of_class),end=', ')
+#         print(']',end='')
+#         print('\t{:<8}'.format(model_config['name']))
