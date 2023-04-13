@@ -26,6 +26,7 @@ class LeadingTree:
         self.dc = dc
         self.lt_num = lt_num
         self.D = D.cpu().numpy()
+        self.D.astype('float64')
 
         self.density = None
         self.Pa = None
@@ -46,9 +47,9 @@ class LeadingTree:
         self.density: local density of all samples
         self.Q: Sort the density index in descending order
         """
-        tempMat1 = np.exp(-(D ** 2))
+        tempMat1 = np.exp(np.sqrt(np.sum(D ** 2, axis=1).reshape(-1, 1)))
         tempMat = np.power(tempMat1, dc ** (-2))
-        self.density = np.sum(tempMat, 1, dtype='float64') - 1
+        self.density = np.sum(tempMat, 1, dtype='float64')
         self.Q = np.argsort(self.density)[::-1]
 
     def ComputeParentNode(self, Q, edge_index):
@@ -71,10 +72,18 @@ class LeadingTree:
                 neighbor = neighbor[neighbor != Q[i]]  # neighbor of current node
             if i == 0 or (neighbor.shape[0] == 1 and neighbor[0] == Q[i]):
                 self.Pa[Q[i]] = -1
-                self.delta[Q[i]] = np.min(self.density[neighbor])
+                self.delta[Q[i]] = np.abs(self.density[Q[i]] - np.max(self.density[neighbor])) + 1e-5  # add a small num to avoid zero
             else:
-                self.Pa[Q[i]] = neighbor[np.argmax(self.density[neighbor])]
-                self.delta[Q[i]] = np.max(self.density[neighbor])
+                # self.Pa[Q[i]] = neighbor[np.argmax(self.density[neighbor])]
+                # self.delta[Q[i]] = np.max(self.density[neighbor])
+                # self.Pa[Q[i]] = neighbor[np.argmax(self.density[neighbor])]
+                # self.delta[Q[i]] = np.abs(np.max(self.density[neighbor]) - self.density[Q[i]]) + 1e-5  # add a small num to avoid zero
+                idx = np.zeros(shape=neighbor.shape)
+                for j in range(neighbor.shape[0]):
+                    idx[j] = np.argwhere(Q == neighbor[j])
+                closest = np.argmin(np.abs(i - idx))
+                self.Pa[Q[i]] = Q[int(idx[closest])]
+                self.delta[Q[i]] = np.abs(self.density[self.Pa[Q[i]]] - self.density[Q[i]]) + 1e-5  # add a small num to avoid zero
 
     def ProCenter(self, density, delta, Pa):
         """
