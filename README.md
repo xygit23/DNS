@@ -12,5 +12,5 @@ The code has integrated with **Deeper Insights into Graph Convolutional Networks
 
 ## Run
 
-adjust parameters in `argument.py` and use `main.py` to run.
+Adjust parameters in `argument.py` and use `main.py` to run.
 
